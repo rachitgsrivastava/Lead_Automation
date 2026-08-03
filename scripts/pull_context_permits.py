@@ -40,6 +40,7 @@ def _request(
     headers = {
         "Authorization": _auth_header(),
         "Accept": "application/json",
+        "User-Agent": os.environ.get("USER_AGENT", "Lead-Automation/1.0"),
     }
 
     for attempt in range(max_retries):
