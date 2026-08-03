@@ -130,6 +130,7 @@ def main() -> None:
     page_limit = int(os.environ.get("PAGE_LIMIT", str(DEFAULT_PAGE_LIMIT)))
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     data_dir = Path(os.environ.get("DATA_DIR", "data/context_permits"))
+    data_dir.mkdir(parents=True, exist_ok=True)
     run_dir = data_dir / stamp
 
     jurisdictions_path = run_dir / "jurisdictions.json"
