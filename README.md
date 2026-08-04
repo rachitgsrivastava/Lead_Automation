@@ -6,7 +6,7 @@ Peer and adjacent public companies (solar, storage, renewables) for lead scoring
 
 | File | Description |
 |------|-------------|
-| [`data/energy_companies.csv`](data/energy_companies.csv) | Ticker and company name (18 rows) |
+| [`data/energy_companies.csv`](data/energy_companies.csv) | Ticker and company name (19 rows) |
 
 ```bash
 # Quick view
