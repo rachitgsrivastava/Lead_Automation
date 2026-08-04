@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Fetch daily closing prices for energy tickers (last 30 days of 2023).
+"""Fetch daily closing prices for energy tickers (last 30 trading days of 2023).
 
-Uses Yahoo Finance's public chart API (no API key). Output is written under
-data/stock_closes_dec2023/ by default.
+Uses Yahoo Finance's public chart API (no API key). Trading days are taken from
+SPY session dates in calendar year 2023 (NYSE-style daily bars). Output is written
+under data/stock_closes_dec2023/ by default.
 """
 
 from __future__ import annotations
@@ -21,16 +22,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TICKERS_CSV = ROOT / "data" / "energy_companies.csv"
 
-# Last 30 calendar days of 2023: 2023-12-02 through 2023-12-31 (inclusive).
-RANGE_START = date(2023, 12, 2)
-RANGE_END = date(2023, 12, 31)
-# Request window: start of Dec 1 UTC through start of Jan 1 2024 UTC.
-PERIOD1 = int(datetime(2023, 12, 1, tzinfo=timezone.utc).timestamp())
-PERIOD2 = int(datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp())
+YEAR = 2023
+N_TRADING_DAYS = 30
+CALENDAR_TICKER = "SPY"
 
 USER_AGENT = (
     "Mozilla/5.0 (compatible; Lead_Automation/1.0; +https://github.com/rachitgsrivastava/Lead_Automation)"
 )
+
+
+def year_unix_bounds(year: int) -> tuple[int, int]:
+    period1 = int(datetime(year, 1, 1, tzinfo=timezone.utc).timestamp())
+    period2 = int(datetime(year + 1, 1, 1, tzinfo=timezone.utc).timestamp())
+    return period1, period2
 
 
 def load_tickers(path: Path) -> list[str]:
@@ -42,29 +46,34 @@ def load_tickers(path: Path) -> list[str]:
     return tickers
 
 
-def fetch_daily_closes(ticker: str, retries: int = 3) -> list[tuple[date, float]]:
+def _fetch_chart_payload(ticker: str, period1: int, period2: int, retries: int = 3) -> dict:
     url = (
         "https://query1.finance.yahoo.com/v8/finance/chart/"
         f"{urllib.parse.quote(ticker)}"
-        f"?period1={PERIOD1}&period2={PERIOD2}&interval=1d"
+        f"?period1={period1}&period2={period2}&interval=1d"
     )
     last_err: Exception | None = None
-    payload: dict
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(req, timeout=30) as resp:
-                payload = json.load(resp)
-            break
+                return json.load(resp)
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as e:
             last_err = e
             if attempt + 1 < retries:
                 time.sleep(1.5 * (attempt + 1))
             else:
                 raise RuntimeError(f"{ticker}: failed after {retries} attempts") from last_err
-    else:
-        raise RuntimeError(f"{ticker}: unreachable") from last_err
+    raise RuntimeError(f"{ticker}: unreachable") from last_err
 
+
+def parse_daily_closes(
+    payload: dict,
+    ticker: str,
+    *,
+    year: int | None = None,
+    only_dates: set[date] | None = None,
+) -> list[tuple[date, float]]:
     chart = payload.get("chart") or {}
     results = chart.get("result") or []
     if not results:
@@ -81,10 +90,36 @@ def fetch_daily_closes(ticker: str, retries: int = 3) -> list[tuple[date, float]
         if close is None:
             continue
         d = datetime.fromtimestamp(ts, tz=timezone.utc).date()
-        if RANGE_START <= d <= RANGE_END:
-            out.append((d, float(close)))
+        if year is not None and d.year != year:
+            continue
+        if only_dates is not None and d not in only_dates:
+            continue
+        out.append((d, float(close)))
     out.sort(key=lambda x: x[0])
     return out
+
+
+def fetch_daily_closes(
+    ticker: str,
+    period1: int,
+    period2: int,
+    *,
+    year: int | None = None,
+    only_dates: set[date] | None = None,
+) -> list[tuple[date, float]]:
+    payload = _fetch_chart_payload(ticker, period1, period2)
+    return parse_daily_closes(payload, ticker, year=year, only_dates=only_dates)
+
+
+def last_n_trading_days_of_year(year: int, n: int, calendar_ticker: str = CALENDAR_TICKER) -> list[date]:
+    period1, period2 = year_unix_bounds(year)
+    series = fetch_daily_closes(calendar_ticker, period1, period2, year=year)
+    dates = sorted({d for d, _ in series})
+    if len(dates) < n:
+        raise RuntimeError(
+            f"Expected at least {n} trading days in {year} from {calendar_ticker}, got {len(dates)}"
+        )
+    return dates[-n:]
 
 
 def write_long_csv(path: Path, rows: list[dict[str, str | float]]) -> None:
@@ -125,7 +160,22 @@ def main() -> int:
         default=0.35,
         help="Seconds between ticker requests (rate limiting)",
     )
+    parser.add_argument(
+        "--calendar-ticker",
+        default=CALENDAR_TICKER,
+        help=f"Ticker used to define US trading days (default: {CALENDAR_TICKER})",
+    )
     args = parser.parse_args()
+
+    period1, period2 = year_unix_bounds(YEAR)
+    trading_dates = last_n_trading_days_of_year(YEAR, N_TRADING_DAYS, args.calendar_ticker)
+    trading_set = set(trading_dates)
+
+    print(
+        f"Last {N_TRADING_DAYS} trading days of {YEAR}: "
+        f"{trading_dates[0].isoformat()} .. {trading_dates[-1].isoformat()}",
+        file=sys.stderr,
+    )
 
     tickers = load_tickers(args.tickers_csv)
     long_rows: list[dict[str, str | float]] = []
@@ -136,28 +186,35 @@ def main() -> int:
         if i > 0 and args.sleep > 0:
             time.sleep(args.sleep)
         try:
-            series = fetch_daily_closes(ticker)
+            series = fetch_daily_closes(
+                ticker, period1, period2, year=YEAR, only_dates=trading_set
+            )
             if not series:
-                raise RuntimeError("no closing prices in date range (symbol may be delisted or illiquid)")
+                raise RuntimeError("no closing prices on target trading days (symbol may be delisted)")
             by_ticker[ticker] = {d: c for d, c in series}
             for d, c in series:
                 long_rows.append({"date": d.isoformat(), "ticker": ticker, "close": c})
-            print(f"{ticker}: {len(series)} closes", file=sys.stderr)
+            missing = len(trading_dates) - len(series)
+            suffix = f", {missing} dates missing" if missing else ""
+            print(f"{ticker}: {len(series)} closes{suffix}", file=sys.stderr)
         except Exception as e:
             errors.append(f"{ticker}: {e}")
             print(f"ERROR {ticker}: {e}", file=sys.stderr)
 
     long_rows.sort(key=lambda r: (r["date"], r["ticker"]))
-    dates = sorted({d for m in by_ticker.values() for d in m})
 
     out_long = args.out_dir / "closes_long.csv"
     out_wide = args.out_dir / "closes_wide.csv"
     write_long_csv(out_long, long_rows)
-    write_wide_csv(out_wide, by_ticker, dates)
+    write_wide_csv(out_wide, by_ticker, trading_dates)
 
     meta = {
-        "range_start": RANGE_START.isoformat(),
-        "range_end": RANGE_END.isoformat(),
+        "year": YEAR,
+        "n_trading_days": N_TRADING_DAYS,
+        "calendar_ticker": args.calendar_ticker,
+        "trading_dates": [d.isoformat() for d in trading_dates],
+        "range_start": trading_dates[0].isoformat(),
+        "range_end": trading_dates[-1].isoformat(),
         "tickers_requested": tickers,
         "tickers_ok": sorted(by_ticker.keys()),
         "errors": errors,
