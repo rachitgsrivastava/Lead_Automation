@@ -29,6 +29,6 @@ Outputs under `data/stock_closes_dec2023/` (gitignored):
 | `closes_wide.csv` | One row per trading date (30 rows), one column per ticker |
 | `fetch_meta.json` | Full list of trading dates, tickers fetched, any errors |
 
-For 2023 the window is **2023-11-15 through 2023-12-29** (30 sessions; 2023-12-29 was the last US equity session that year).
+For 2023 the window is **2023-11-16 through 2023-12-29** (30 sessions; 2023-12-29 was the last US equity session that year).
 
 **Note:** Symbols removed from Yahoo after delisting (e.g. `NOVA`, `TPIC` as of 2026) may return no data; see `fetch_meta.json` for per-ticker errors.
