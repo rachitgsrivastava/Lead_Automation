@@ -42,3 +42,15 @@ Outputs under `data/stock_closes_dec2023/` (gitignored):
 | `fetch_meta.json` | Trading date lists, formula, errors |
 
 2023 window (fixed): **2023-11-16 .. 2023-12-29**. Recent window end date is the latest SPY session on or before the run date.
+
+### 2024 base window (17-ticker peer list)
+
+Same logic with **last 30 trading sessions of calendar year 2024** as the base period. Tickers in [`data/energy_companies_2024_base.csv`](data/energy_companies_2024_base.csv) (no NOVA/SPWR; includes RUN).
+
+```bash
+python3 scripts/fetch_stock_closes_2024_base.py
+```
+
+Outputs under `data/stock_closes_2024_base/` (gitignored). Returns CSV column: `avg_close_2024_last_30td`.
+
+Shared implementation: [`scripts/stock_avg_return.py`](scripts/stock_avg_return.py).
