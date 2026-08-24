@@ -35,7 +35,7 @@ Outputs under `data/stock_closes_dec2023/` (gitignored):
 
 | File | Format |
 |------|--------|
-| `returns_avg_last_30td.csv` | Per-ticker averages, return %, delisted flag |
+| `returns_avg_last_30td.csv` | Per-ticker averages, return %, `last_close`, `return_last_close_pct` vs base-year 30d avg, delisted flag |
 | `closes_2023_last_30td_long.csv` / `_wide.csv` | 2023 window daily closes |
 | `closes_recent_last_30td_long.csv` / `_wide.csv` | Recent window daily closes |
 | `closes_long.csv` / `closes_wide.csv` | Same as 2023 files (backward compatible) |

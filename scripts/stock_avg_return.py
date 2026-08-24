@@ -211,6 +211,8 @@ def write_returns_csv(path: Path, rows: list[dict[str, object]], base_year: int)
         avg_base_col,
         "avg_close_recent_last_30td",
         "return_pct",
+        "last_close",
+        "return_last_close_pct",
         "no_longer_traded",
         "note",
     ]
@@ -281,6 +283,7 @@ def run_avg_return_study(
 
         avg_base = average_close(series_base)
         avg_recent = average_close(series_recent)
+        last_close = series_recent[-1][1] if series_recent else None
         no_longer_traded = not series_recent
         notes: list[str] = []
         if err_base:
@@ -290,13 +293,16 @@ def run_avg_return_study(
 
         if no_longer_traded:
             ret = DELISTED_RETURN_PCT
+            ret_last_close = DELISTED_RETURN_PCT
             if not notes:
                 notes.append("no recent closing prices (no longer traded)")
         elif avg_base is None:
             ret = DELISTED_RETURN_PCT
+            ret_last_close = DELISTED_RETURN_PCT
             notes.append(f"missing {base_year} average; return set to -100%")
         else:
             ret = return_pct(avg_base, avg_recent)  # type: ignore[arg-type]
+            ret_last_close = return_pct(avg_base, last_close)  # type: ignore[arg-type]
 
         if series_base:
             by_ticker_base[ticker] = {d: c for d, c in series_base}
@@ -313,6 +319,8 @@ def run_avg_return_study(
                 avg_base_col: "" if avg_base is None else round(avg_base, 6),
                 "avg_close_recent_last_30td": "" if avg_recent is None else round(avg_recent, 6),
                 "return_pct": round(ret, 6),
+                "last_close": "" if last_close is None else round(last_close, 6),
+                "return_last_close_pct": round(ret_last_close, 6),
                 "no_longer_traded": "true" if no_longer_traded else "false",
                 "note": "; ".join(notes),
             }
@@ -359,6 +367,7 @@ def run_avg_return_study(
         "range_recent_end": trading_dates_recent[-1].isoformat(),
         "delisted_return_pct": DELISTED_RETURN_PCT,
         "return_formula": f"(avg_recent - avg_{base_year}) / avg_{base_year} * 100",
+        "return_last_close_formula": f"(last_close - avg_{base_year}) / avg_{base_year} * 100",
         "tickers_requested": tickers,
         f"tickers_with_{base_year}_closes": sorted(by_ticker_base.keys()),
         "tickers_with_recent_closes": sorted(by_ticker_recent.keys()),
