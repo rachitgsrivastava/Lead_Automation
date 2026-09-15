@@ -14,6 +14,7 @@ from pathlib import Path
 from statistics import mean
 
 N_TRADING_DAYS = 30
+N_RECENT_SHORT = 10
 CALENDAR_TICKER = "SPY"
 DELISTED_RETURN_PCT = -100.0
 RECENT_CALENDAR_BUFFER_DAYS = 120
@@ -180,6 +181,12 @@ def average_close(series: list[tuple[date, float]]) -> float | None:
     return mean(c for _, c in series)
 
 
+def filter_series_to_dates(
+    series: list[tuple[date, float]], only_dates: set[date]
+) -> list[tuple[date, float]]:
+    return [(d, c) for d, c in series if d in only_dates]
+
+
 def return_pct(avg_base: float, avg_recent: float) -> float:
     return (avg_recent - avg_base) / avg_base * 100.0
 
@@ -211,6 +218,8 @@ def write_returns_csv(path: Path, rows: list[dict[str, object]], base_year: int)
         avg_base_col,
         "avg_close_recent_last_30td",
         "return_pct",
+        "avg_close_recent_last_10td",
+        "return_last_10td_pct",
         "last_close",
         "return_last_close_pct",
         "no_longer_traded",
@@ -240,6 +249,10 @@ def run_avg_return_study(
     trading_set_base = set(trading_dates_base)
     trading_dates_recent = last_n_trading_days_recent(N_TRADING_DAYS, calendar_ticker, as_of=as_of)
     trading_set_recent = set(trading_dates_recent)
+    trading_dates_recent_10 = last_n_trading_days_recent(
+        N_RECENT_SHORT, calendar_ticker, as_of=as_of
+    )
+    trading_set_recent_10 = set(trading_dates_recent_10)
 
     print(
         f"Last {N_TRADING_DAYS} trading days of {base_year}: "
@@ -249,6 +262,11 @@ def run_avg_return_study(
     print(
         f"Last {N_TRADING_DAYS} trading days as of {as_of.isoformat()}: "
         f"{trading_dates_recent[0].isoformat()} .. {trading_dates_recent[-1].isoformat()}",
+        file=sys.stderr,
+    )
+    print(
+        f"Last {N_RECENT_SHORT} trading days as of {as_of.isoformat()}: "
+        f"{trading_dates_recent_10[0].isoformat()} .. {trading_dates_recent_10[-1].isoformat()}",
         file=sys.stderr,
     )
 
@@ -283,6 +301,8 @@ def run_avg_return_study(
 
         avg_base = average_close(series_base)
         avg_recent = average_close(series_recent)
+        series_recent_10 = filter_series_to_dates(series_recent, trading_set_recent_10)
+        avg_recent_10 = average_close(series_recent_10)
         last_close = series_recent[-1][1] if series_recent else None
         no_longer_traded = not series_recent
         notes: list[str] = []
@@ -293,15 +313,23 @@ def run_avg_return_study(
 
         if no_longer_traded:
             ret = DELISTED_RETURN_PCT
+            ret_10 = DELISTED_RETURN_PCT
             ret_last_close = DELISTED_RETURN_PCT
             if not notes:
                 notes.append("no recent closing prices (no longer traded)")
         elif avg_base is None:
             ret = DELISTED_RETURN_PCT
+            ret_10 = DELISTED_RETURN_PCT
             ret_last_close = DELISTED_RETURN_PCT
             notes.append(f"missing {base_year} average; return set to -100%")
+        elif not avg_recent_10:
+            ret = return_pct(avg_base, avg_recent)  # type: ignore[arg-type]
+            ret_10 = DELISTED_RETURN_PCT
+            ret_last_close = return_pct(avg_base, last_close)  # type: ignore[arg-type]
+            notes.append(f"missing last {N_RECENT_SHORT} session closes")
         else:
             ret = return_pct(avg_base, avg_recent)  # type: ignore[arg-type]
+            ret_10 = return_pct(avg_base, avg_recent_10)
             ret_last_close = return_pct(avg_base, last_close)  # type: ignore[arg-type]
 
         if series_base:
@@ -319,6 +347,8 @@ def run_avg_return_study(
                 avg_base_col: "" if avg_base is None else round(avg_base, 6),
                 "avg_close_recent_last_30td": "" if avg_recent is None else round(avg_recent, 6),
                 "return_pct": round(ret, 6),
+                "avg_close_recent_last_10td": "" if avg_recent_10 is None else round(avg_recent_10, 6),
+                "return_last_10td_pct": round(ret_10, 6),
                 "last_close": "" if last_close is None else round(last_close, 6),
                 "return_last_close_pct": round(ret_last_close, 6),
                 "no_longer_traded": "true" if no_longer_traded else "false",
@@ -361,6 +391,8 @@ def run_avg_return_study(
         "calendar_ticker": calendar_ticker,
         f"trading_dates_{base_year}": [d.isoformat() for d in trading_dates_base],
         "trading_dates_recent": [d.isoformat() for d in trading_dates_recent],
+        "trading_dates_recent_10": [d.isoformat() for d in trading_dates_recent_10],
+        "n_recent_short": N_RECENT_SHORT,
         f"range_{base_year}_start": trading_dates_base[0].isoformat(),
         f"range_{base_year}_end": trading_dates_base[-1].isoformat(),
         "range_recent_start": trading_dates_recent[0].isoformat(),
@@ -368,6 +400,9 @@ def run_avg_return_study(
         "delisted_return_pct": DELISTED_RETURN_PCT,
         "return_formula": f"(avg_recent - avg_{base_year}) / avg_{base_year} * 100",
         "return_last_close_formula": f"(last_close - avg_{base_year}) / avg_{base_year} * 100",
+        "return_last_10td_formula": (
+            f"(avg_recent_last_{N_RECENT_SHORT}td - avg_{base_year}) / avg_{base_year} * 100"
+        ),
         "tickers_requested": tickers,
         f"tickers_with_{base_year}_closes": sorted(by_ticker_base.keys()),
         "tickers_with_recent_closes": sorted(by_ticker_recent.keys()),
