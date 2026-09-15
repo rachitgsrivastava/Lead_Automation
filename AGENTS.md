@@ -4,7 +4,7 @@ Guidance for AI agents and developers working in this repository.
 
 ## Product
 
-**Lead_Automation** — pulls Sunrun permit data from the Context.dev API (`https://sunrunapi.context.dev/v1`) via `scripts/pull_context_permits.py`. Output lands under `data/context_permits/<UTC-timestamp>/` (`jurisdictions.json`, `permits.jsonl`, `pull_meta.json`). Python 3 stdlib only; no `requirements.txt` or local services.
+**Lead_Automation** — pulls Sunrun permit data from the Context.dev API (`https://sunrunapi.context.dev/v1`). Use `scripts/refresh_context_permits.py` for incremental refreshes (merges into `data/context_permits/latest/`); use `scripts/pull_context_permits.py` for one-off full exports under `data/context_permits/<UTC-timestamp>/`. Shared HTTP helpers live in `scripts/context_api.py`. Python 3 stdlib only; no `requirements.txt` or local services.
 
 ## Cursor Cloud specific instructions
 
@@ -12,15 +12,21 @@ Guidance for AI agents and developers working in this repository.
 
 - **`api_key`** (required for real API calls): Bearer token for Context.dev. Configure as a **Runtime Secret** in [Cursor Cloud Agents → Environment → Secrets](https://cursor.com/dashboard/cloud-agents#environments), then start a new agent run so the VM receives it.
 
-### Run the permit pull
+### Run a refresh (recommended)
 
 From the repository root:
 
 ```bash
-python3 scripts/pull_context_permits.py
+python3 scripts/refresh_context_permits.py
 ```
 
-Optional environment variables (see `README.md`): `MAX_ROWS`, `PAGE_LIMIT`, `DATA_DIR`.
+Incremental mode uses `data/context_permits/refresh_state.json` and passes `since=<last_refresh_at>` to `/permits` (override with `SINCE` or `REFRESH_MODE=full`). Optional env vars: `MAX_ROWS`, `PAGE_LIMIT`, `DATA_DIR`, `SINCE_PARAM`.
+
+### One-off full export
+
+```bash
+python3 scripts/pull_context_permits.py
+```
 
 ### Cloudflare / User-Agent (Error 1010)
 
@@ -47,9 +53,9 @@ A durable fix is to add a `User-Agent` header in `scripts/pull_context_permits.p
 
 ### Lint / tests
 
-- **Syntax check**: `python3 -m py_compile scripts/pull_context_permits.py`
+- **Syntax check**: `python3 -m py_compile scripts/context_api.py scripts/pull_context_permits.py scripts/refresh_context_permits.py`
 - **Automated tests**: none in the repository today.
-- **E2E smoke**: successful run creates a new timestamped folder under `data/context_permits/` with three files and `pull_meta.json` reporting `rows_written` > 0 when the API has data.
+- **E2E smoke**: successful refresh creates/updates `data/context_permits/latest/` and a timestamped run folder with `refresh_meta.json` reporting `rows_fetched_this_run` > 0 when the API has data.
 
 ### Services
 
